@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Auto Setter",
+  "version": "1.0.0",
+  "description": "Geminiを開いた際に一時チャットと指定モードを自動適用する",
+  "permissions": ["storage"],
+  "host_permissions": ["https://gemini.google.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}
