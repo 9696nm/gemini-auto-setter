@@ -240,6 +240,43 @@
     return false;
   }
 
+  function focusAndSelectTextInput() {
+    const allElements = getAllElements();
+    const inputSelectors = [
+      (el) => el.tagName === 'TEXTAREA' && el.closest?.('[class*="input"], [class*="prompt"], [class*="composer"]'),
+      (el) => el.getAttribute?.('contenteditable') === 'true' && el.getAttribute?.('role') === 'textbox',
+      (el) => el.getAttribute?.('role') === 'textbox' && el.closest?.('[class*="input"], [class*="prompt"], [class*="composer"]'),
+      (el) => el.tagName === 'TEXTAREA',
+      (el) => el.getAttribute?.('contenteditable') === 'true',
+      (el) => el.getAttribute?.('role') === 'textbox',
+    ];
+    for (const el of allElements) {
+      const isInput = inputSelectors.some((fn) => fn(el));
+      if (isInput && el.offsetParent !== null) {
+        try {
+          el.focus();
+          if (el.tagName === 'TEXTAREA' || el.getAttribute?.('role') === 'textbox') {
+            el.select?.();
+            if (el.setSelectionRange) {
+              el.setSelectionRange(0, (el.value || el.textContent || '').length);
+            }
+          } else if (el.getAttribute?.('contenteditable') === 'true') {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(range);
+          }
+          log('テキスト入力にフォーカスしました');
+          return true;
+        } catch (e) {
+          console.warn(PREFIX, 'テキスト入力のフォーカスに失敗:', e);
+        }
+      }
+    }
+    return false;
+  }
+
   function log(...args) {
     if (window.__GEMINI_AUTO_SETTER_DEBUG__) {
       console.log(PREFIX, ...args);
@@ -363,6 +400,11 @@
     if (debugMode && ((applyTemporaryChat && !tempOk) || (mode && mode !== 'none' && !selectorOk))) {
       runDomDiagnostic();
     }
+
+    // 選択後にテキスト入力をフォーカス＆選択状態にする
+    await delay(300);
+    focusAndSelectTextInput();
+
     if (debugMode) console.log(PREFIX, '=== デバッグ終了 ===');
     };
 
