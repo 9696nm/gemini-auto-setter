@@ -335,13 +335,13 @@
   }
 
   async function runAutoSetter() {
-    const { enabled = true, triggerUrls = ['/u/1/app', '/app'], applyTemporaryChat = true, mode = 'thinking', debugMode = false, delayMs = 3000 } = await chrome.storage.sync.get({
+    const { enabled, triggerUrls, applyTemporaryChat, mode, debugMode, delayMs } = await chrome.storage.sync.get({
       enabled: true,
       triggerUrls: ['/u/1/app?pli=1'],
       applyTemporaryChat: true,
       mode: 'thinking',
       debugMode: false,
-      delayMs: 1500,
+      delayMs: 1000,
     });
 
     window.__GEMINI_AUTO_SETTER_DEBUG__ = debugMode;
@@ -382,9 +382,9 @@
       selectorOk = openModelSelector();
       log('モデルセレクターを開く:', selectorOk ? '成功' : '失敗（要素が見つかりません）');
       if (selectorOk) {
-        await delay(500);
+        await delay(100);
         let modeOk = false;
-        const timings = [500, 1000, 1500, 2000];
+        const timings = [50, 500, 1000, 1500, 2000];
         for (const t of timings) {
           await delay(t);
           if (findAndClickMode(mode)) {

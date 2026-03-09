@@ -1,13 +1,13 @@
 const DEFAULT_TRIGGER_URLS = ['/u/1/app?pli=1'];
 
 async function loadOptions() {
-  const { enabled = true, triggerUrls = DEFAULT_TRIGGER_URLS, applyTemporaryChat = true, mode = 'thinking', debugMode = false, delayMs = 3000 } = await chrome.storage.sync.get({
+  const { enabled, triggerUrls, applyTemporaryChat, mode, debugMode, delayMs } = await chrome.storage.sync.get({
     enabled: true,
     triggerUrls: DEFAULT_TRIGGER_URLS,
     applyTemporaryChat: true,
     mode: 'thinking',
     debugMode: false,
-    delayMs: 1500,
+    delayMs: 1000,
   });
 
   document.getElementById('enabled').checked = enabled;
