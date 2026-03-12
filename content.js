@@ -51,6 +51,48 @@
     return elements;
   }
 
+  /** Angular Material 対応: 確実にクリックを発火させる */
+  function safeClick(el) {
+    if (!el) return false;
+    const opts = { bubbles: true, cancelable: true, view: window };
+    try {
+      el.focus?.();
+      el.click();
+      return true;
+    } catch (e) {
+      try {
+        el.dispatchEvent(new MouseEvent('mousedown', opts));
+        el.dispatchEvent(new MouseEvent('mouseup', opts));
+        el.dispatchEvent(new MouseEvent('click', opts));
+        return true;
+      } catch (e2) {
+        console.warn(PREFIX, 'クリック失敗:', e2);
+        return false;
+      }
+    }
+  }
+
+  /** mat-menu-trigger 用: スクロール＋座標付き PointerEvent で確実に開く */
+  function openMenuTriggerClick(el) {
+    if (!el) return false;
+    try {
+      el.scrollIntoView?.({ block: 'center', behavior: 'auto' });
+    } catch (_) {}
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+    try {
+      el.focus?.();
+      el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1, pointerType: 'mouse' }));
+      el.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerId: 1, pointerType: 'mouse' }));
+      el.dispatchEvent(new MouseEvent('click', opts));
+      return true;
+    } catch (e) {
+      return safeClick(el);
+    }
+  }
+
   function matchesUrlPattern(url, patterns) {
     if (!patterns || patterns.length === 0) return true;
     const path = new URL(url).pathname + new URL(url).search;
@@ -66,6 +108,24 @@
     });
   }
 
+  /** メインメニュー（サイドナビ）を開く - data-test-id="side-nav-menu-button" */
+  function openMainMenu() {
+    const allElements = getAllElements();
+    const mainMenuSelectors = [
+      (el) => el.getAttribute?.('data-test-id') === 'side-nav-menu-button',
+      (el) => (el.getAttribute?.('aria-label') || '').trim() === 'メインメニュー',
+      (el) => (el.className || '').includes('main-menu-button'),
+    ];
+    for (const el of allElements) {
+      const btn = el.tagName === 'BUTTON' || el.getAttribute?.('role') === 'button' ? el : el.closest?.('button, [role="button"]');
+      const target = btn || el;
+      if (mainMenuSelectors.some((fn) => fn(target))) {
+        if (safeClick(target)) return true;
+      }
+    }
+    return false;
+  }
+
   function findAndClickTemporaryChat() {
     const allElements = getAllElements();
     for (const el of allElements) {
@@ -76,12 +136,7 @@
 
       if (TEMPORARY_CHAT_LABELS.some((label) => combined.includes(label))) {
         const clickable = el.closest('button, [role="button"], a, [role="tab"], [role="option"]') || el;
-        try {
-          clickable.click();
-          return true;
-        } catch (e) {
-          console.warn(PREFIX, '一時チャットのクリックに失敗:', e);
-        }
+        if (safeClick(clickable)) return true;
       }
     }
     return false;
@@ -103,12 +158,7 @@
       // 1. data-test-id で厳密マッチ（最優先）
       if (config.dataTestIds?.some((id) => testId === id)) {
         const clickable = el.closest('button, [role="menuitemradio"], [role="menuitem"], .mat-mdc-menu-item') || el;
-        try {
-          clickable.click();
-          return true;
-        } catch (e) {
-          console.warn(PREFIX, 'モードのクリックに失敗:', e);
-        }
+        if (safeClick(clickable)) return true;
       }
 
       // 2. ラベルでマッチ（除外ラベルに該当しないこと）
@@ -116,14 +166,7 @@
       const excluded = excludeLabels.some((ex) => combined.includes(ex));
       if (labelMatch && !excluded) {
         const clickable = el.closest('button, [role="menuitemradio"], [role="menuitem"], .mat-mdc-menu-item') || el;
-        if (clickable && clickable.getAttribute?.('aria-checked') !== 'true') {
-          try {
-            clickable.click();
-            return true;
-          } catch (e) {
-            console.warn(PREFIX, 'モードのクリックに失敗:', e);
-          }
-        }
+        if (clickable && clickable.getAttribute?.('aria-checked') !== 'true' && safeClick(clickable)) return true;
       }
     }
     return false;
@@ -136,59 +179,65 @@
     return ariaLabel.includes('アップロード') || ariaLabel.includes('upload') || !!parent;
   }
 
+  /** bard-logo（チャットを新規作成リンク）を除外 - モード選択と誤認しないため */
+  function isBardLogoOrNewChatLink(el) {
+    const clickable = el.closest?.('a, button, [role="button"]') || el;
+    const ariaLabel = (clickable.getAttribute?.('aria-label') || '').trim();
+    const cls = (clickable.className || '') + (el.closest?.('[class*="bard-logo"]')?.className || '');
+    const classStr = typeof cls === 'string' ? cls : (cls.baseVal || '');
+    const hasBardLogoId =
+      clickable.getAttribute?.('data-test-id') === 'bard-logo-only' ||
+      !!clickable.querySelector?.('[data-test-id="bard-logo-only"]') ||
+      !!el.closest?.('[data-test-id="bard-logo-only"]');
+    return (
+      ariaLabel.includes('チャットを新規作成') ||
+      ariaLabel.includes('Create new chat') ||
+      ariaLabel.includes('New chat') ||
+      classStr.includes('bard-logo-container') ||
+      hasBardLogoId
+    );
+  }
+
   function openModelSelector() {
     const allElements = getAllElements();
 
-    // 1. 優先: bard-mode-switcher / モード選択ツール（ファイルアップロードを除外）
+    // 1. 最優先: data-test-id="bard-mode-menu-button"（mat-menu-trigger 用の特別処理）
+    for (const el of allElements) {
+      if (el.getAttribute?.('data-test-id') === 'bard-mode-menu-button') {
+        const btn = el.tagName === 'BUTTON' || el.getAttribute?.('role') === 'button' ? el : el.closest?.('button, [role="button"]');
+        const target = btn || el;
+        if (target && !isFileUploadButton(target) && !isBardLogoOrNewChatLink(target) && openMenuTriggerClick(target)) return true;
+      }
+    }
+
+    // 2. aria-label / bard-mode-switcher（ファイルアップロードを除外）
     const modeSelectorLabels = ['モード選択ツールを開く', 'Open mode selector', 'Choose your model', 'モデルを選択'];
     for (const el of allElements) {
       const ariaLabel = (el.getAttribute('aria-label') || '').trim();
       const testId = el.getAttribute('data-test-id') || '';
       const tagName = (el.tagName || '').toLowerCase();
       const parentTag = el.closest?.('bard-mode-switcher') || el.closest?.('[class*="bard-mode-switcher"]');
-
       const isModeButton = (tagName === 'button' || el.getAttribute('role') === 'button') &&
         (testId === 'bard-mode-menu-button' ||
           modeSelectorLabels.some((l) => ariaLabel.includes(l)) ||
           !!parentTag);
 
-      if (isModeButton && !isFileUploadButton(el)) {
-        try {
-          el.click();
-          return true;
-        } catch (e) {
-          console.warn(PREFIX, 'モデルセレクターのクリックに失敗:', e);
-        }
-      }
+      if (isModeButton && !isFileUploadButton(el) && !isBardLogoOrNewChatLink(el) && openMenuTriggerClick(el)) return true;
     }
 
-    // 2. bard-mode-switcher 内のボタン
+    // 3. bard-mode-switcher 内のボタン（フォールバック）
     for (const el of allElements) {
       const switcher = el.closest?.('bard-mode-switcher');
-      if (switcher && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button')) {
-        try {
-          el.click();
-          return true;
-        } catch (e) {
-          console.warn(PREFIX, 'モデルセレクターのクリックに失敗:', e);
-        }
-      }
+      if (switcher && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button') && !isBardLogoOrNewChatLink(el) && openMenuTriggerClick(el)) return true;
     }
 
-    // 3. aria-label に model/モデル/Choose を含むボタン（ファイルアップロード除外）
+    // 4. aria-label に model/モデル/Choose を含むボタン（ファイルアップロード除外）
     for (const el of allElements) {
       const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
       const text = (el.textContent || '').toLowerCase().trim().slice(0, 50);
       const isButton = el.tagName === 'BUTTON' || el.getAttribute('role') === 'button' || el.getAttribute('role') === 'combobox';
       const hasModel = ariaLabel.includes('model') || ariaLabel.includes('モデル') || ariaLabel.includes('choose') || text.includes('choose your model');
-      if (isButton && hasModel && !isFileUploadButton(el)) {
-        try {
-          el.click();
-          return true;
-        } catch (e) {
-          console.warn(PREFIX, 'モデルセレクターのクリックに失敗:', e);
-        }
-      }
+      if (isButton && hasModel && !isFileUploadButton(el) && !isBardLogoOrNewChatLink(el) && safeClick(el)) return true;
     }
 
     // 4. mat-mdc-button-touch-target（ファイルアップロード・input-area-switch を区別）
@@ -206,35 +255,21 @@
       const classStr = typeof cls === 'string' ? cls : (cls.baseVal || '');
       if (classStr.includes('mat-mdc-button-touch-target')) {
         const clickable = el.closest('button, [role="button"]') || el;
-        if (clickable && !isFileUploadButton(clickable) && (classStr.includes('input-area-switch') || clickable.closest?.('.input-area-switch') || clickable.closest?.('bard-mode-switcher'))) {
+        if (clickable && !isFileUploadButton(clickable) && !isBardLogoOrNewChatLink(clickable) && (classStr.includes('input-area-switch') || clickable.closest?.('.input-area-switch') || clickable.closest?.('bard-mode-switcher'))) {
           menuTriggers.push({ el: clickable, nearInput: isNearInputArea(clickable) });
         }
       }
     }
     const target = menuTriggers.find((t) => t.nearInput)?.el || menuTriggers[0]?.el;
-    if (target) {
-      try {
-        target.click();
-        return true;
-      } catch (e) {
-        console.warn(PREFIX, 'モデルセレクターのクリックに失敗:', e);
-      }
-    }
+    if (target && openMenuTriggerClick(target)) return true;
 
     // 5. bard-mode 系トリガー（bard-mode-list-button は除外）
     for (const el of allElements) {
       const cls = (el.className || '');
       const classStr = typeof cls === 'string' ? cls : (cls.baseVal || '');
-      if (classStr.includes('bard-mode') && !classStr.includes('bard-mode-list-button') && !isFileUploadButton(el)) {
+      if (classStr.includes('bard-mode') && !classStr.includes('bard-mode-list-button') && !classStr.includes('bard-logo') && !isFileUploadButton(el)) {
         const clickable = el.closest('button, [role="button"]') || el;
-        if (clickable?.closest?.('bard-mode-switcher')) {
-          try {
-            clickable.click();
-            return true;
-          } catch (e) {
-            console.warn(PREFIX, 'モード選択のクリックに失敗:', e);
-          }
-        }
+        if (clickable?.closest?.('bard-mode-switcher') && !isBardLogoOrNewChatLink(clickable) && openMenuTriggerClick(clickable)) return true;
       }
     }
     return false;
@@ -372,7 +407,15 @@
     let selectorOk = false;
 
     if (applyTemporaryChat) {
+      // まず直接クリックを試す（メニューが既に開いている場合はこれで成功）
       tempOk = findAndClickTemporaryChat();
+      if (!tempOk) {
+        // 見つからなければメニューを開いてから再試行（閉じている場合のみクリック）
+        const mainMenuOk = openMainMenu();
+        log('メインメニューを開く:', mainMenuOk ? '成功' : 'スキップ（要素なし）');
+        if (mainMenuOk) await delay(400);
+        tempOk = findAndClickTemporaryChat();
+      }
       log('一時チャット:', tempOk ? '成功' : '失敗（要素が見つかりません）');
       if (tempOk) await delay(400);
     }
