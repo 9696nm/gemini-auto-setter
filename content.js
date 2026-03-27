@@ -23,7 +23,7 @@
   const MODE_SELECTORS = {
     thinking: {
       dataTestIds: ['bard-mode-option-思考モード', 'bard-mode-option-thinking', 'bard-mode-option-Thinking'],
-      labels: ['思考モード', 'Thinking mode', '思考'],
+      labels: ['思考モード', 'Thinking mode', 'Thinking'],
       excludeLabels: ['高速モード', 'Flash', 'Pro'],
     },
     standard: {
@@ -142,23 +142,40 @@
     return false;
   }
 
+  function isElementVisible(el) {
+    if (!el) return false;
+    if (typeof el.checkVisibility === 'function') {
+      return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
   function findAndClickMode(modeKey) {
     const config = MODE_SELECTORS[modeKey];
     if (!config) return false;
 
-    const allElements = getAllElements();
     const excludeLabels = config.excludeLabels || [];
 
-    for (const el of allElements) {
-      const testId = (el.getAttribute('data-test-id') || '').trim();
+    // 開いているメニューパネル内を優先検索（Angular Material はパネルが開いている間だけ表示）
+    const menuPanel = document.querySelector('.mat-mdc-menu-panel, .mat-menu-panel');
+    const searchElements = menuPanel
+      ? Array.from(menuPanel.querySelectorAll('[data-test-id], button, [role="menuitem"], [role="menuitemradio"]'))
+      : getAllElements();
+
+    // メニューパネルが見つかったが要素数がゼロの場合は未表示扱い
+    if (menuPanel && searchElements.length === 0) return false;
+
+    for (const el of searchElements) {
+      const testId = (el.getAttribute?.('data-test-id') || '').trim();
       const text = (el.textContent || '').trim();
-      const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+      const ariaLabel = (el.getAttribute?.('aria-label') || '').trim();
       const combined = [text, ariaLabel, testId].join(' ');
 
       // 1. data-test-id で厳密マッチ（最優先）
       if (config.dataTestIds?.some((id) => testId === id)) {
         const clickable = el.closest('button, [role="menuitemradio"], [role="menuitem"], .mat-mdc-menu-item') || el;
-        if (safeClick(clickable)) return true;
+        if (clickable && isElementVisible(clickable) && safeClick(clickable)) return true;
       }
 
       // 2. ラベルでマッチ（除外ラベルに該当しないこと）
@@ -166,7 +183,7 @@
       const excluded = excludeLabels.some((ex) => combined.includes(ex));
       if (labelMatch && !excluded) {
         const clickable = el.closest('button, [role="menuitemradio"], [role="menuitem"], .mat-mdc-menu-item') || el;
-        if (clickable && clickable.getAttribute?.('aria-checked') !== 'true' && safeClick(clickable)) return true;
+        if (clickable && isElementVisible(clickable) && clickable.getAttribute?.('aria-checked') !== 'true' && safeClick(clickable)) return true;
       }
     }
     return false;
